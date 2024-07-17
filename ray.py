@@ -20,4 +20,4 @@ class Rays:
         return Ray(self.origins[key], self.directions[key])
     
     def __call__(self, t: Union[torch.Tensor, float]):
-        return self.origins + t * self.directions
+        return self.origins + t[..., None] * self.directions
