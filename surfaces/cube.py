@@ -10,7 +10,18 @@ class Cube(Primitive):
         self.material_index = material_index
 
     def transform_(self, matrix: torch.Tensor):
-        self.position = self.position @ matrix.T
+        """
+        Apply a 4x4 transformation matrix to the planes's normal and offset.
+        
+        Args:
+        matrix (torch.Tensor): A 4x4 transformation matrix.
+        """
+        assert matrix.shape == (4, 4), "Transformation matrix must be 4x4"
+
+        position_homogeneous = torch.cat([self.position, torch.tensor([1.0])], dim=0)
+        
+        position_homogeneous = position_homogeneous @ matrix.T
+        self.position = position_homogeneous[:3]
     
     def ray_intersect(self, rays: Rays) -> torch.Tensor:
         """

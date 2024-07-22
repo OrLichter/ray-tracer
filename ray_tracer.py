@@ -27,21 +27,27 @@ class RayTracer:
         self.camera = camera
         self.scene_settings = scene_settings
         self.objects = [obj for obj in objects if is_valid_object(obj)]
-        self.objects = self.objects[:2] #TODO: remove hardcoded object - only for debug
+        # self.objects = self.objects[:2] #TODO: remove hardcoded object - only for debug
         self.width = width
         self.height = height
+        self._transform_scene_to_view()
+        
+    def _transform_scene_to_view(self):
+        world_to_cam_matrix = self.camera.world_to_cam()
+        for obj in self.objects:
+            obj.transform_(world_to_cam_matrix)
 
     def render(self) -> np.ndarray:
         """ Render the scene """
         image = torch.zeros((self.width, self.height, 3))
-        for i in range(self.width):
+        for i in range(self.width): # TODO: return batch of all rays
             for j in range(self.height):
                 # Generate multiple rays per pixel
                 rays = self.camera.generate_rays((i, j), self.width, self.height)
 
                 depth = 0 # TODO: implement depth
                 color = self.trace_rays(rays, depth)
-                image[i, j] += color
+                image[j, i] += color
                 print("DEBUG::Rendering pixel ({}, {})".format(i, j))
 
         return (image * 255).clamp(0, 255).cpu().numpy().astype(np.uint8) # W x H x 3
@@ -53,8 +59,10 @@ class RayTracer:
         closest_intersection = None
 
         for obj in self.objects:
-            intersection = obj.ray_intersect(rays)
-            if len(intersection) != 0: # if there is an intersection
+            if isinstance(obj, Light):
+                continue
+            intersection = obj.ray_intersect(rays)  # TODO: Should be batched, for now only one ray
+            if (~intersection.isnan()).sum() > 0: # if there is an intersection
                 distance_of_intersection = torch.norm(rays.origins - intersection, dim=-1)
                 if distance_of_intersection < closest_intersection_distance:
                     closest_intersection_distance = distance_of_intersection
@@ -135,10 +143,10 @@ def save_image(image_array):
 
 def main():
     parser = argparse.ArgumentParser(description='Python Ray Tracer')
-    parser.add_argument('scene_file', default="scenes/pool.txt", type=str, help='Path to the scene file')
-    parser.add_argument('output_image', default="test.png", type=str, help='Name of the output image file')
-    parser.add_argument('--width', type=int, default=8, help='Image width')
-    parser.add_argument('--height', type=int, default=8, help='Image height')
+    parser.add_argument('--scene_file', default="scenes/pool.txt", type=str, help='Path to the scene file')
+    parser.add_argument('--output_image', default="test.png", type=str, help='Name of the output image file')
+    parser.add_argument('--width', type=int, default=32, help='Image width')
+    parser.add_argument('--height', type=int, default=32, help='Image height')
     args = parser.parse_args()
 
     # Parse the scene file

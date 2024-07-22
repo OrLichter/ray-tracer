@@ -7,8 +7,8 @@ from ray import Rays
 def test_sphere_ray_intersection():
     sphere = Sphere([0, 0, 0], 1, 0)
     rays = Rays(
-        origins=torch.tensor([[0, 0, 2], [0, 0, 2], [0, 0, 2]]),
-        directions=torch.tensor([[0, 0, -1], [0, 0, 1], [0, 1, 0]])
+        origins=torch.tensor([[0, 0, 2], [0, 0, 2], [0, 0, 2]], dtype=torch.float32),
+        directions=torch.tensor([[0, 0, -1], [0, 0, 1], [0, 1, 0]], dtype=torch.float32)
     )
     points = sphere.ray_intersect(rays)
     expected_points = torch.tensor([0, 0, 1], dtype=torch.float32)
@@ -40,5 +40,5 @@ def test_cube_ray_intersection():
     assert torch.isnan(points2[3]).all()
 
 if __name__ == '__main__':
-    test_cube_ray_intersection()
+    test_sphere_ray_intersection()
     print("All tests passed!")

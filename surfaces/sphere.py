@@ -10,7 +10,17 @@ class Sphere(Primitive):
         self.material = material
 
     def transform_(self, matrix: torch.Tensor):
-        self.position = self.position @ matrix.T
+        """
+        Apply a 4x4 transformation matrix to the sphere's position.
+        
+        Args:
+        matrix (torch.Tensor): A 4x4 transformation matrix.
+        """
+        assert matrix.shape == (4, 4), "Transformation matrix must be 4x4"
+
+        position_homogeneous = torch.cat([self.position, torch.tensor([1.0])], dim=0)
+        position_homogeneous = position_homogeneous @ matrix.T
+        self.position = position_homogeneous[:3]
     
     def ray_intersect(self, rays: Rays) -> torch.Tensor:
         """
@@ -24,38 +34,25 @@ class Sphere(Primitive):
         """
         # Vector from ray origin to sphere center
         oc = rays.origins - self.position
-        # oc = self.position - rays.origins
 
-        num_rays = rays.origins.shape[0] if len(rays.origins.shape) > 1 else 1
-        a = torch.ones(num_rays, device=rays.origins.device).squeeze()
-        b = 2.0 * oc @ rays.directions
-        c = torch.sum(oc * oc, dim=-1) - self.radius ** 2
-
+        a = torch.ones(oc.shape[0], device=rays.origins.device)
+        b = 2.0 * torch.sum(oc * rays.directions, dim=-1)
+        c = torch.sum(oc * oc, dim=-1) - self.radius * self.radius
+        
         discriminant = b * b - 4 * a * c
+        
+        points = torch.full((rays.origins.shape[0], 3), float('nan'), device=rays.origins.device)
+        
+        # Compute the smaller root for valid intersections (- discriminant is necassarily the smaller root)
+        t = (-b - torch.sqrt(discriminant)) / (2.0 * a)
+        
+        valid = torch.logical_and(discriminant >= 0, t >= 0)
 
-        # Initialize the output tensor with NaNs
-        points = torch.full((num_rays, 3), float('nan'), device=rays.origins.device).squeeze()
-
-        # Compute the smaller root for valid intersections
-        sqrt_discriminant = torch.sqrt(discriminant)
-        t1 = (-b - sqrt_discriminant) / (2.0 * a)
-        t2 = (-b + sqrt_discriminant) / (2.0 * a)
-        t1_valid = torch.logical_and(t1 >= 0, discriminant >= 0)
-        t2_valid = torch.logical_and(t2 >= 0, discriminant >= 0)
-
-        t = torch.where(t1_valid, t1, torch.where(t2_valid, t2, torch.tensor(float('inf'), device=rays.origins.device)))
-
-        valid = torch.logical_and(discriminant >= 0, t < float('inf'))
-
-        # Compute intersection points for valid intersections
-        valid_points = rays[valid](t[valid])
 
         # Assign valid intersection points to the output tensor
         if valid.any():
+            valid_points = rays[valid](t[valid])
             points[valid] = valid_points
-        else:
-            #TODO: (Or) return all nans
-            points = EMPTY_TENSOR.to(rays.origins.device)
 
         return points
     

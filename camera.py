@@ -58,25 +58,21 @@ class Camera:
         return rotation @ translation
 
 
-    def generate_rays(self, loc: Tuple[int, int], width: int, height: int) -> Rays:
+    def generate_rays(self, loc: Tuple[int, int], width: int, height: int, world_coords: bool = False) -> Rays:
         """Generate a ray for a pixel at coordinates (i, j).
 
-        This function generates a ray that starts at the camera's position
-        and passes through the pixel at coordinates (i, j) on the camera's
-        screen. The screen is located at the camera's look-at point, and its
-        width and height are determined by the camera's screen width and the
-        aspect ratio of the image.
+        This function generates a ray that starts at the camera's origin (0, 0, 0)
+        in camera space and passes through the pixel at coordinates (i, j) on the
+        camera's screen. The screen is located at z = -screen_distance in camera space.
 
         Args:
-            i (int): The x-coordinate of the pixel.
-            j (int): The y-coordinate of the pixel.
+            loc (Tuple[int, int]): The (x, y) coordinates of the pixel.
+            width (int): The width of the image in pixels.
+            height (int): The height of the image in pixels.
+            world_coords (bool): If True, return rays in world coordinates. If False, return in camera coordinates.
 
         Returns:
-            Rays: A Rays object representing the generated ray.
-
-        Example:
-            camera = Camera([0, 0, 5], [0, 0, 0], [0, 1, 0], 1, 2)
-            rays = camera.generate_rays(0, 0)
+            Rays: A Rays object representing the generated ray in the specified coordinate system.
         """
         i, j = loc
 
@@ -87,21 +83,30 @@ class Camera:
         x = (i + 0.5) / width
         y = (j + 0.5) / height
 
-        # Transform to camera space
-        screen_y = ((2 * x - 1) * aspect_ratio * self.screen_width / 2)
-        screen_x = (1 - 2 * y) * self.screen_height(aspect_ratio) / 2
+        # Calculate screen coordinates
+        screen_x = (2 * x - 1) * self.screen_width / 2
+        screen_y = (1 - 2 * y) * (self.screen_width / aspect_ratio) / 2
 
         # Calculate the direction of the ray in camera space
-        # direction = torch.tensor([screen_x, screen_y, self.screen_distance], device=self.position.device)
-        direction = torch.tensor([screen_x, screen_y, self.screen_distance], device=self.position.device)
-        direction = direction / torch.norm(direction)
+        direction = torch.tensor([screen_x, screen_y, -self.screen_distance], dtype=torch.float32)
+        direction = torch.nn.functional.normalize(direction, dim=0)
 
-        # Transform the direction from camera to world space
-        world_to_cam = self.world_to_cam()
-        direction = torch.matmul(world_to_cam[:3, :3], direction)
-        
-        return Rays(self.position, direction)
-    
+        if world_coords:
+            # Transform ray to world coordinates
+            world_to_cam = self.world_to_cam()
+            cam_to_world = torch.inverse(world_to_cam)
+            
+            # Transform direction to world space
+            world_direction = torch.matmul(cam_to_world[:3, :3], direction)
+            
+            # Origin in world space is the camera position
+            world_origin = self.position
+            
+            return Rays(world_origin, world_direction)
+        else:
+            # Return in camera coordinates
+            cam_origin = torch.zeros(3, dtype=torch.float32)
+            return Rays(cam_origin, direction)
     
     @cached_property
     def direction(self) -> torch.Tensor:

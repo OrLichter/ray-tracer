@@ -9,8 +9,26 @@ class InfinitePlane(Primitive):
         self.material = material
 
     def transform_(self, matrix):
-        self.normal = self.normal @ matrix.T
-        self.offset = self.offset @ matrix.T
+        """
+        Apply a 4x4 transformation matrix to the planes's normal and offset.
+        
+        Args:
+        matrix (torch.Tensor): A 4x4 transformation matrix.
+        """
+        assert matrix.shape == (4, 4), "Transformation matrix must be 4x4"
+
+        rotation_matrix = matrix[:3, :3]
+        translation_vector = matrix[:3, 3]
+
+        # Transform the normal vector
+        transformed_normal = rotation_matrix @ self.normal
+
+        # Adjust the offset using the transformed normal and the translation part
+        transformed_offset = self.offset + transformed_normal @ translation_vector
+
+        # Update the plane's normal and offset
+        self.normal = transformed_normal
+        self.offset = transformed_offset
     
     def ray_intersect(self, rays):
         """
