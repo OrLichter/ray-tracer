@@ -9,6 +9,6 @@ class Scene:
         self.camera = camera
         self.objects = objects
 
-        world_to_came_matrix = self.camera.world_to_cam()
+        world_to_cam_matrix = self.camera.world_to_cam()
         for obj in self.objects:
-            obj.transform_(world_to_came_matrix)
+            obj.transform_(world_to_cam_matrix)

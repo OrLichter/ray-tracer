@@ -1,6 +1,7 @@
 import torch
 from functools import cached_property
-
+from ray import Rays
+from typing import Tuple
 
 class Camera:
     def __init__(self, position, look_at, up_vector, screen_distance, screen_width):
@@ -55,7 +56,53 @@ class Camera:
         translation[:3, 3] = -self.position
         
         return rotation @ translation
-            
+
+
+    def generate_rays(self, loc: Tuple[int, int], width: int, height: int) -> Rays:
+        """Generate a ray for a pixel at coordinates (i, j).
+
+        This function generates a ray that starts at the camera's position
+        and passes through the pixel at coordinates (i, j) on the camera's
+        screen. The screen is located at the camera's look-at point, and its
+        width and height are determined by the camera's screen width and the
+        aspect ratio of the image.
+
+        Args:
+            i (int): The x-coordinate of the pixel.
+            j (int): The y-coordinate of the pixel.
+
+        Returns:
+            Rays: A Rays object representing the generated ray.
+
+        Example:
+            camera = Camera([0, 0, 5], [0, 0, 0], [0, 1, 0], 1, 2)
+            rays = camera.generate_rays(0, 0)
+        """
+        i, j = loc
+
+        # Calculate the aspect ratio of the image
+        aspect_ratio = width / height
+
+        # Calculate the pixel's position on the screen
+        x = (i + 0.5) / width
+        y = (j + 0.5) / height
+
+        # Transform to camera space
+        screen_y = ((2 * x - 1) * aspect_ratio * self.screen_width / 2)
+        screen_x = (1 - 2 * y) * self.screen_height(aspect_ratio) / 2
+
+        # Calculate the direction of the ray in camera space
+        # direction = torch.tensor([screen_x, screen_y, self.screen_distance], device=self.position.device)
+        direction = torch.tensor([screen_x, screen_y, self.screen_distance], device=self.position.device)
+        direction = direction / torch.norm(direction)
+
+        # Transform the direction from camera to world space
+        world_to_cam = self.world_to_cam()
+        direction = torch.matmul(world_to_cam[:3, :3], direction)
+        
+        return Rays(self.position, direction)
+    
+    
     @cached_property
     def direction(self) -> torch.Tensor:
         # Calculate the camera's coordinate system

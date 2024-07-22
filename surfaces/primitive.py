@@ -3,6 +3,8 @@ from abc import ABC, abstractmethod
 from typing import overload
 from ray import Rays
 
+#TODO: (Or) remove this
+EMPTY_TENSOR = torch.empty((0, 3))
 
 class Primitive(ABC):
     @overload
