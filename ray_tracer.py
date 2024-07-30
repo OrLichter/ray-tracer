@@ -2,6 +2,7 @@ from PIL import Image
 import argparse
 import numpy as np
 import torch
+
 from camera import Camera
 from light import Light
 from material import Material
@@ -10,6 +11,7 @@ from surfaces.cube import Cube
 from surfaces.infinite_plane import InfinitePlane
 from surfaces.sphere import Sphere
 from ray import Rays
+from surfaces.primitive import Primitive
 
 
 
@@ -27,7 +29,6 @@ class RayTracer:
         self.camera = camera
         self.scene_settings = scene_settings
         self.objects = [obj for obj in objects if is_valid_object(obj)]
-        # self.objects = self.objects[:2] #TODO: remove hardcoded object - only for debug
         self.width = width
         self.height = height
         self._transform_scene_to_view()
@@ -45,7 +46,7 @@ class RayTracer:
                 # Generate multiple rays per pixel
                 rays = self.camera.generate_rays((i, j), self.width, self.height)
 
-                depth = 0 # TODO: implement depth
+                depth = self.scene_settings.max_recursions
                 color = self.trace_rays(rays, depth)
                 image[j, i] += color
                 print("DEBUG::Rendering pixel ({}, {})".format(i, j))
@@ -61,36 +62,105 @@ class RayTracer:
         for obj in self.objects:
             if isinstance(obj, Light):
                 continue
-            intersection = obj.ray_intersect(rays)  # TODO: Should be batched, for now only one ray
-            if (~intersection.isnan()).sum() > 0: # if there is an intersection
-                distance_of_intersection = torch.norm(rays.origins - intersection, dim=-1)
-                if distance_of_intersection < closest_intersection_distance:
-                    closest_intersection_distance = distance_of_intersection
-                    closest_intersection = intersection
+            intersection_point, distances, normals = obj.ray_intersect(rays)  # TODO: Should be batched, for now only one ray
+            if (~intersection_point.isnan()).sum() > 0: # if there is an intersection
+                if distances[0] < closest_intersection_distance:
+                    closest_intersection_distance = distances[0]
+                    closest_intersection = intersection_point[0]
                     closest_obj = obj
+                    closest_normal = normals[0]
 
         if closest_intersection is None:
-            return torch.zeros(3)
+            return self.scene_settings.background_color
 
         # Compute the color
-        color = self.compute_color(closest_obj, closest_intersection, rays, depth)
+        color = self.compute_color(closest_obj, closest_intersection, rays, closest_normal, depth)
 
         return color
     
-    def compute_color(self, obj, intersection, rays, depth):
+    def compute_color(
+        self,
+        obj: Primitive,
+        intersection: torch.Tensor,
+        rays: torch.Tensor,
+        normal: torch.Tensor,
+        depth
+    ):
         """ Compute the color of the pixel """
-        if isinstance(obj, InfinitePlane):
-            # return blue
-            return obj.color
-        
-        if isinstance(obj, Sphere):
-            # return red
-            return obj.color
-        
+        if depth <= 0:
+            return torch.zeros(3)
 
-        color = torch.tensor([0, 0, 0])
-        # TODO: Implement the color computation
-        return color
+        color = torch.zeros(3)
+        diffuse_color = obj.material.diffuse_color
+        specular_color = obj.material.specular_color
+        reflection_color = obj.material.reflection_color
+        shininess = obj.material.shininess
+        transparency = obj.material.transparency
+
+        # Accumulate contributions from all light sources
+        for light in self.objects:
+            if not isinstance(light, Light):
+                continue
+
+            # Calculate light direction and distance
+            light_vec = light.position - intersection
+            light_distance = torch.norm(light_vec)
+            light_dir = light_vec / light_distance
+
+            # Check for shadows
+            shadow_ray = Rays(intersection + normal * 1e-4, light_dir)
+            shadow_factor = 1.0
+            for shadow_obj in self.objects:
+                if shadow_obj == obj or shadow_obj == light:
+                    continue
+                shadow_intersection, shadow_distances, _ = shadow_obj.ray_intersect(shadow_ray)
+                if not shadow_intersection.isnan().all():
+                    if shadow_distances[0] < light_distance:
+                        shadow_factor = 1.0 - light.shadow_intensity
+                    break
+
+            if shadow_factor > 0:
+                # Diffuse component
+                nl_dot = torch.clamp(torch.dot(normal, light_dir), 0, 1)
+                diffuse = diffuse_color * nl_dot * light.color * shadow_factor
+
+                # Specular component
+                view_dir = -rays.directions[0]
+                reflect_dir = 2 * torch.dot(normal, light_dir) * normal - light_dir
+                spec_dot = torch.clamp(torch.dot(view_dir, reflect_dir), 0, 1)
+                specular = specular_color * (spec_dot ** shininess) * light.color * light.specular_intensity * shadow_factor
+
+                # Add contribution from this light
+                color += diffuse + specular
+
+        # Reflection
+        if torch.any(reflection_color > 0) and depth > 0:
+            reflect_dir = rays.directions[0] - 2 * torch.dot(rays.directions[0], normal) * normal
+            reflect_ray = Rays(intersection + normal * 1e-4, reflect_dir)
+            reflect_color = self.trace_rays(reflect_ray, depth - 1)
+            color += reflection_color * reflect_color
+
+        # Refraction (transparency)
+        if transparency > 0 and depth > 0:
+            # Simplified refraction (assuming same refractive index for all materials)
+            refract_dir = self.refract(rays.directions,[0], normal, 1.0, 1.5)  # Assuming air to glass
+            if refract_dir is not None:
+                refract_ray = Rays(intersection - normal * 1e-4, refract_dir)
+                refract_color = self.trace_rays(refract_ray, depth - 1)
+                color = color * (1 - transparency) + refract_color * transparency
+
+        return torch.clamp(color, 0, 1)
+
+    def refract(incident: torch.Tensor, normal: torch.Tensor, n1: float, n2: float) -> torch.Tensor:
+        """Calculate the refraction direction."""
+        ratio = n1 / n2
+        cos_i = -torch.dot(normal, incident)
+        sin_t_sq = ratio * ratio * (1.0 - cos_i * cos_i)
+        if sin_t_sq > 1.0:
+            return None  # Total internal reflection
+        cos_t = torch.sqrt(1.0 - sin_t_sq)
+        return ratio * incident + (ratio * cos_i - cos_t) * normal
+
 
 def parse_scene_file(file_path):
     objects = []
@@ -145,8 +215,8 @@ def main():
     parser = argparse.ArgumentParser(description='Python Ray Tracer')
     parser.add_argument('--scene_file', default="scenes/pool.txt", type=str, help='Path to the scene file')
     parser.add_argument('--output_image', default="test.png", type=str, help='Name of the output image file')
-    parser.add_argument('--width', type=int, default=32, help='Image width')
-    parser.add_argument('--height', type=int, default=32, help='Image height')
+    parser.add_argument('--width', type=int, default=128, help='Image width')
+    parser.add_argument('--height', type=int, default=128, help='Image height')
     args = parser.parse_args()
 
     # Parse the scene file

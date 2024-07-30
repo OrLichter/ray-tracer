@@ -43,9 +43,12 @@ class InfinitePlane(Primitive):
         # Compute the intersection points
         #TODO (Or): Implement this a bit differently
         t = -(torch.sum(rays.origins * self.normal, dim=-1) + self.offset) / torch.sum(rays.directions * self.normal, dim=-1)
-        points = rays(t)
+        if t < 0:
+            points = torch.full((rays.origins.shape[0], 3), float('nan'), device=rays.origins.device)
+        else:
+            points = rays(t)
         
-        return points
+        return points, t, self.normal.expand_as(points)
 
     @property
     def color(self):

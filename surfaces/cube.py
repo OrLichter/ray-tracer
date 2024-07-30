@@ -50,5 +50,8 @@ class Cube(Primitive):
         
         valid = torch.logical_and(valid_intersections, t >= 0)
         points[~valid] = float('nan')
+        normals = torch.zeros_like(points)
+        # TODO: Compute normals
+
         
-        return points
+        return points, t, normals

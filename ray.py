@@ -18,9 +18,11 @@ class Rays:
     
     def __init__(self, origins: torch.Tensor, directions: torch.Tensor):
         if len(origins.shape) == 1:
-            self.origins = origins[None]
+            origins = origins[None]
         if len(directions.shape) == 1:
-            self.directions = directions[None]
+            directions = directions[None]
+        self.origins = origins
+        self.directions = directions
         
     def __getitem__(self, key):
         return Ray(self.origins[key], self.directions[key])

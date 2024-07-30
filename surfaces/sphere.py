@@ -42,6 +42,7 @@ class Sphere(Primitive):
         discriminant = b * b - 4 * a * c
         
         points = torch.full((rays.origins.shape[0], 3), float('nan'), device=rays.origins.device)
+        normals = torch.full((rays.origins.shape[0], 3), float('nan'), device=rays.origins.device)
         
         # Compute the smaller root for valid intersections (- discriminant is necassarily the smaller root)
         t = (-b - torch.sqrt(discriminant)) / (2.0 * a)
@@ -53,9 +54,10 @@ class Sphere(Primitive):
         if valid.any():
             valid_points = rays[valid](t[valid])
             points[valid] = valid_points
-
-        return points
+            normals[valid] = (valid_points - self.position) / self.radius
     
+        return points, t, normals
+
     @property
     def color(self):
         return self.material.diffuse_color
