@@ -1,4 +1,4 @@
 __pycache__/
 .vscode/
 *.py[cod]
-scenes/Spheres.png
+scenes/*.png
