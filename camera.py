@@ -2,6 +2,7 @@ import torch
 from functools import cached_property
 from ray import Rays
 from typing import Tuple
+import torch.nn.functional as F
 
 class Camera:
     def __init__(self, position, look_at, up_vector, screen_distance, screen_width):
@@ -11,6 +12,7 @@ class Camera:
         self.screen_distance = torch.tensor(screen_distance, dtype=torch.float32)
         self.screen_width = torch.tensor(screen_width, dtype=torch.float32)
 
+    @cached_property
     def world_to_cam(self) -> torch.Tensor:
         """Computes the world-to-camera transformation matrix.
 
@@ -31,7 +33,7 @@ class Camera:
 
         Example:
             camera = Camera([0, 0, 5], [0, 0, 0], [0, 1, 0], 1, 2)
-            world_to_cam_matrix = camera.world_to_cam()
+            world_to_cam_matrix = camera.world_to_cam
             world_point = torch.tensor([1, 2, 3, 1], dtype=torch.float32)
             cam_point = torch.matmul(world_to_cam_matrix, world_point)
         """
@@ -42,12 +44,13 @@ class Camera:
         right = right / torch.norm(right)
         
         up = torch.cross(right, forward)
+        up = up / torch.norm(up)
         
         # Create the rotation matrix
         rotation = torch.stack([
             torch.cat([right, torch.tensor([0.0])]),
             torch.cat([up, torch.tensor([0.0])]),
-            torch.cat([-forward, torch.tensor([0.0])]),
+            torch.cat([forward, torch.tensor([0.0])]),
             torch.tensor([0.0, 0.0, 0.0, 1.0])
         ])
         
@@ -88,12 +91,12 @@ class Camera:
         screen_y = (1 - 2 * y) * (self.screen_width / aspect_ratio) / 2
 
         # Calculate the direction of the ray in camera space
-        direction = torch.tensor([screen_x, screen_y, -self.screen_distance], dtype=torch.float32)
-        direction = torch.nn.functional.normalize(direction, dim=0)
+        direction = torch.tensor([-screen_x, screen_y, self.screen_distance], dtype=torch.float32)
+        direction = F.normalize(direction, dim=0)
 
         if world_coords:
             # Transform ray to world coordinates
-            world_to_cam = self.world_to_cam()
+            world_to_cam = self.world_to_cam
             cam_to_world = torch.inverse(world_to_cam)
             
             # Transform direction to world space

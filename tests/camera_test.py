@@ -6,7 +6,7 @@ def test_camera_transform_matrix():
     camera = Camera([0, 0, 5],
                     [0, 0, 0],
                     [0, 1, 0], 1, 2)
-    world_to_cam_matrix = camera.world_to_cam()
+    world_to_cam_matrix = camera.world_to_cam
     world_point = torch.tensor([[0, 0, 0, 1],
                                 [1, 2, 3, 1]], dtype=torch.float32)
     cam_point =  world_point @ world_to_cam_matrix.T
@@ -19,7 +19,7 @@ def test_camera_transform_matrix2():
     camera = Camera([0, 10, -2],
                     [0, -100, -4],
                     [0, 1, 0], 1, 2)
-    world_to_cam_matrix = camera.world_to_cam()
+    world_to_cam_matrix = camera.world_to_cam
     world_point = torch.tensor([[0, 0, 0, 1],
                                 [2, 0, 0, 1]], dtype=torch.float32)
     cam_point =  world_point @ world_to_cam_matrix.T
