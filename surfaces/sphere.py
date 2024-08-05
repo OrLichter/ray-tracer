@@ -1,3 +1,4 @@
+from functools import cached_property
 import torch
 from ray import Rays
 from surfaces.primitive import Primitive, EMPTY_TENSOR
@@ -19,9 +20,25 @@ class Sphere(Primitive):
         assert matrix.shape == (4, 4), "Transformation matrix must be 4x4"
 
         position_homogeneous = torch.cat([self.position, torch.tensor([1.0])], dim=0)
-        position_homogeneous = position_homogeneous @ matrix.T
+        position_homogeneous = matrix @ position_homogeneous
         self.position = position_homogeneous[:3]
     
+    @cached_property
+    def nan_points_array(self):
+        return torch.full((1, 3), float('nan'))
+
+    @cached_property
+    def normal_points_array(self):
+        return torch.full((1, 3), float('nan'))
+
+    @cached_property
+    def ones_array(self):
+        return torch.ones(1)
+    
+    @cached_property
+    def radius_squared(self):
+        return self.radius * self.radius
+
     def ray_intersect(self, rays: Rays) -> torch.Tensor:
         """
         Compute intersection of rays with the sphere
@@ -35,20 +52,19 @@ class Sphere(Primitive):
         # Vector from ray origin to sphere center
         oc = rays.origins - self.position
 
-        a = torch.ones(oc.shape[0], device=rays.origins.device)
+        a = self.ones_array.repeat(oc.shape[0])
         b = 2.0 * torch.sum(oc * rays.directions, dim=-1)
-        c = torch.sum(oc * oc, dim=-1) - self.radius * self.radius
+        c = torch.sum(oc * oc, dim=-1) - self.radius_squared
         
         discriminant = b * b - 4 * a * c
         
-        points = torch.full((rays.origins.shape[0], 3), float('nan'), device=rays.origins.device)
-        normals = torch.full((rays.origins.shape[0], 3), float('nan'), device=rays.origins.device)
+        points = self.nan_points_array.repeat(rays.origins.shape[0], 1)
+        normals = self.normal_points_array.repeat(rays.origins.shape[0], 1)
         
         # Compute the smaller root for valid intersections (- discriminant is necassarily the smaller root)
         t = (-b - torch.sqrt(discriminant)) / (2.0 * a)
         
         valid = torch.logical_and(discriminant >= 0, t >= 0)
-
 
         # Assign valid intersection points to the output tensor
         if valid.any():
@@ -58,6 +74,17 @@ class Sphere(Primitive):
     
         return points, t, normals
 
-    @property
-    def color(self):
-        return self.material.diffuse_color
+    def aabb(self) -> torch.Tensor:
+        """
+        Compute the axis-aligned bounding box (AABB) of the sphere.
+        
+        Returns:
+            torch.Tensor: A tensor of shape (2, 3) representing the AABB of the sphere.
+        """
+
+        min_corner = self.position - self.radius
+        max_corner = self.position + self.radius
+
+        aabb = torch.stack([min_corner, max_corner])
+        
+        return aabb

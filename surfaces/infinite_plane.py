@@ -41,15 +41,27 @@ class InfinitePlane(Primitive):
             points: torch.Tensor of shape (n, 3) of intersection points
         """
         # Compute the intersection points
-        #TODO (Or): Implement this a bit differently
-        t = -(torch.sum(rays.origins * self.normal, dim=-1) + self.offset) / torch.sum(rays.directions * self.normal, dim=-1)
+
+        direction_dot_normal = rays.directions @ self.normal
+        point_on_plane = self.normal * self.offset
+        vector_to_plane = point_on_plane - rays.origins
+        t = (vector_to_plane @ self.normal) / direction_dot_normal
+
         if t < 0:
-            points = torch.full((rays.origins.shape[0], 3), float('nan'), device=rays.origins.device)
+            points = torch.full((rays.origins.shape[0], 3), float('nan'))
         else:
             points = rays(t)
         
         return points, t, self.normal.expand_as(points)
 
-    @property
-    def color(self):
-        return self.material.diffuse_color
+    def aabb(self):
+        """
+        Compute the axis-aligned bounding box of the plane
+        
+        Args:
+            matrix (torch.Tensor): A 4x4 transformation matrix.
+        
+        Returns:
+            torch.Tensor: A 2x3 tensor representing the minimum and maximum corners of the AABB.
+        """
+        return None

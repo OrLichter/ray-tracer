@@ -24,6 +24,11 @@ class Primitive(ABC):
         raise NotImplementedError
     
     @abstractmethod
+    def aabb(self):
+        """ Compute the axis-aligned bounding box of the primitive """
+        raise NotImplementedError
+
+    @abstractmethod
     def ray_intersect(rays: Rays) -> torch.Tensor:
         """
         Compute intersection of rays with the sphere
