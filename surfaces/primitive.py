@@ -1,6 +1,6 @@
 import torch
 from abc import ABC, abstractmethod
-from typing import overload
+from typing import Tuple, overload
 from ray import Rays
 
 #TODO: (Or) remove this
@@ -29,7 +29,7 @@ class Primitive(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def ray_intersect(rays: Rays) -> torch.Tensor:
+    def ray_intersect(rays: Rays) -> Tuple[torch.Tensor]:
         """
         Compute intersection of rays with the sphere
         
