@@ -47,10 +47,8 @@ class InfinitePlane(Primitive):
         vector_to_plane = point_on_plane - rays.origins
         t = (vector_to_plane @ self.normal) / direction_dot_normal
 
-        if t < 0:
-            points = torch.full((rays.origins.shape[0], 3), float('nan'))
-        else:
-            points = rays(t)
+        points = rays(t)
+        points[t < 0] = float('nan')
         
         return points, t, self.normal.expand_as(points)
 
