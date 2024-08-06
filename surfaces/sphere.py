@@ -68,7 +68,7 @@ class Sphere(Primitive):
 
         # Assign valid intersection points to the output tensor
         if valid.any():
-            valid_points = rays[valid](t[valid])
+            valid_points = rays(t)[valid]
             points[valid] = valid_points
             normals[valid] = (valid_points - self.position) / self.radius
     
