@@ -20,7 +20,6 @@ from time import time
 
 
 RESOLUTION = 128
-SOFT_SHADOW_SAMPLES = 25 # the number of rays will be SOFT_SHADOW_SAMPLES ** 2
 GRID_SIZE = 10
 NUM_WORKERS = cpu_count() - 1
 DEBUG = False
@@ -275,7 +274,7 @@ class RayTracer:
         color = self.scene_settings.background_color * transparency
 
         for light in self.lights:
-            average_shadow_factor = self.compute_soft_shadows_batched(obj, normal, intersection, light)
+            average_shadow_factor = self.compute_soft_shadows_batched(obj, normal, intersection, light, self.scene_settings.root_number_shadow_rays)
             color += self.add_diffuse_and_specular(obj, rays, normal, intersection, light, average_shadow_factor)
 
         color += self.add_reflection(obj, intersection, rays, normal, depth)
@@ -300,93 +299,7 @@ class RayTracer:
                 break
         return shadow_factor
     
-    def _compute_soft_shadows(self, obj, intersection, normal, light):
-        shadow_factor_sum = 0.0
-        
-        square_size = light.radius * 2
-        step_size = square_size / SOFT_SHADOW_SAMPLES
-        start_offset = -square_size / 2 + step_size / 2
-
-        for i in range(SOFT_SHADOW_SAMPLES):
-            for j in range(SOFT_SHADOW_SAMPLES):
-                offset_x = start_offset + i * step_size
-                offset_y = start_offset + j * step_size
-                offset = torch.tensor([offset_x, offset_y, 0.0])
-                sampled_light_pos = light.position + offset # Sampled light position
-
-                shadow_ray = Rays(intersection + normal * 1e-4, sampled_light_pos - intersection) # Shadow ray from intersection to light source, with noise to avoid self-intersection
-                shadow_distance = torch.norm(sampled_light_pos - intersection)
-                shadow_factor = 1.0 # Default shadow factor
-
-                # Check for shadows against all objects
-                for shadow_obj in self.non_light_objects:
-                    if shadow_obj == obj:
-                        continue
-                    shadow_intersection, shadow_distances, _ = shadow_obj.ray_intersect(shadow_ray)
-                    if not shadow_intersection.isnan().all():
-                        if shadow_distances[0] < shadow_distance: # Shadow intersection is closer than the light source
-                            shadow_factor = 1.0 - light.shadow_intensity
-                        break
-
-                shadow_factor_sum += shadow_factor
-
-        average_shadow_factor = shadow_factor_sum / (SOFT_SHADOW_SAMPLES ** 2)
-        return average_shadow_factor
-    
-    def compute_soft_shadows(self, obj, normal, intersection, light, num_shadow_rays=SOFT_SHADOW_SAMPLES):
-        light_vec = light.position - intersection
-        light_distance = torch.norm(light_vec)
-        light_dir = light_vec / light_distance
-
-        # Create a plane perpendicular to the light direction
-        plane_normal = light_dir
-        plane_point = light.position
-
-        # Create two orthogonal vectors on the plane
-        u = torch.cross(plane_normal, torch.tensor([1.0, 0.0, 0.0]))
-        if torch.norm(u) < 1e-6:
-            u = torch.cross(plane_normal, torch.tensor([0.0, 1.0, 0.0]))
-        u = u / torch.norm(u)
-        v = torch.cross(plane_normal, u)
-
-        # Calculate the grid size
-        grid_size = int(torch.sqrt(torch.tensor(num_shadow_rays)))
-        cell_size = 2 * light.radius / grid_size
-
-        rays_hit = 0
-
-        for i in range(grid_size):
-            for j in range(grid_size):
-                # Generate random point within the cell
-                dx = torch.rand(1) * cell_size - light.radius + (i + 0.5) * cell_size
-                dy = torch.rand(1) * cell_size - light.radius + (j + 0.5) * cell_size
-
-                # Calculate the point on the plane
-                point_on_plane = light.position + dx * u + dy * v
-
-                # Create shadow ray from the point on the plane to the intersection
-                shadow_ray_dir = intersection - point_on_plane
-                shadow_ray_dir = shadow_ray_dir / torch.norm(shadow_ray_dir)
-                shadow_ray = Rays(point_on_plane + normal * 1e-4, shadow_ray_dir)
-
-                # Check for intersections
-                hit = False
-                for shadow_obj in self.objects:
-                    if shadow_obj == obj or shadow_obj == light:
-                        continue
-                    shadow_intersection, shadow_distances, _ = shadow_obj.ray_intersect(shadow_ray)
-                    if not shadow_intersection.isnan().all():
-                        if shadow_distances[0] < light_distance:
-                            hit = True
-                            break
-                
-                if not hit:
-                    rays_hit += 1
-
-        shadow_factor = (1 - light.shadow_intensity) + light.shadow_intensity * (rays_hit / num_shadow_rays)
-        return shadow_factor
-
-    def compute_soft_shadows_batched(self, obj, normal, intersection, light, num_shadow_rays=SOFT_SHADOW_SAMPLES):      
+    def compute_soft_shadows_batched(self, obj, normal, intersection, light, grid_size):      
         # Compute light vector and distance
         light_vec = light.position - intersection
         light_distance = torch.norm(light_vec)
@@ -404,11 +317,11 @@ class RayTracer:
         v = torch.cross(plane_normal, u)
         
         # Calculate the grid size
-        grid_size = int(torch.sqrt(torch.tensor(num_shadow_rays)))
         cell_size = 2 * light.radius / grid_size
         
         # Generate grid coordinates
-        grid_coords = torch.stack(torch.meshgrid(torch.arange(grid_size), torch.arange(grid_size)), dim=-1).float()
+        grid_coords = torch.stack(torch.meshgrid(torch.arange(grid_size), torch.arange(grid_size), 
+                                                 indexing="ij"), dim=-1).float()
         grid_coords = grid_coords.to(intersection.device)
         
         # Reshape grid_coords to (grid_size*grid_size, 2)
