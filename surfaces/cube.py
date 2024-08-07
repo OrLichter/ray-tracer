@@ -2,138 +2,126 @@ from functools import cached_property
 import torch
 
 from surfaces.primitive import Primitive
-from ray import Rays
 
 class Cube(Primitive):
     def __init__(self, position, scale, material_index):
         self.position = torch.tensor(position, dtype=torch.float32)
         self.scale = torch.tensor(scale, dtype=torch.float32)
         self.material_index = material_index
-        self.rotation = torch.eye(3)  # Identity matrix for initial rotation
-        self.update_corners()
+        self.scale = scale
 
-    def update_corners(self):
-        half_size = 0.5 * self.scale
-        local_corners = torch.tensor([
-            [-1, -1, -1], [1, -1, -1], [-1, 1, -1], [1, 1, -1],
-            [-1, -1, 1], [1, -1, 1], [-1, 1, 1], [1, 1, 1]
-        ], dtype=torch.float32) * half_size
-        rotated_corners = torch.matmul(local_corners, self.rotation.T)
-        self.corners = rotated_corners + self.position
+        self.faces_numbers = [
+            [0, 1, 3, 2],  # Front face
+            [4, 5, 7, 6],  # Back face
+            [0, 2, 6, 4],  # Left face
+            [1, 3, 7, 5],  # Right face
+            [0, 1, 5, 4],  # Bottom face
+            [2, 3, 7, 6],  # Top face
+        ]
 
-    def rotate(self, rotation_matrix: torch.Tensor):
-        """
-        Apply a 3x3 rotation matrix to the cube.
-        Args:
-        rotation_matrix (torch.Tensor): A 3x3 rotation matrix.
-        """
-        assert rotation_matrix.shape == (3, 3), "Rotation matrix must be 3x3"
-        self.rotation = torch.matmul(rotation_matrix, self.rotation)
-        self.update_corners()
+        self.generate_corners()
+
+    def generate_corners(self):
+        half_size = self.scale / 2
+        corners = torch.tensor([
+            [ half_size,  half_size,  half_size],  # (1, 1, 1) * half_size
+            [ half_size,  half_size, -half_size],  # (1, 1, -1) * half_size
+            [ half_size, -half_size,  half_size],  # (1, -1, 1) * half_size
+            [ half_size, -half_size, -half_size],  # (1, -1, -1) * half_size
+            [-half_size,  half_size,  half_size],  # (-1, 1, 1) * half_size
+            [-half_size,  half_size, -half_size],  # (-1, 1, -1) * half_size
+            [-half_size, -half_size,  half_size],  # (-1, -1, 1) * half_size
+            [-half_size, -half_size, -half_size],  # (-1, -1, -1) * half_size
+        ])
+        
+        corners += self.position
+        self.corners = corners
 
     def transform_(self, matrix: torch.Tensor):
-        """
-        Apply a 4x4 transformation matrix to the cube.
-        Args:
-        matrix (torch.Tensor): A 4x4 transformation matrix.
-        """
         assert matrix.shape == (4, 4), "Transformation matrix must be 4x4"
-        
-        # Transform the position
-        homogeneous_position = torch.cat([self.position, torch.ones(1)])
-        transformed_position = torch.matmul(matrix, homogeneous_position)
-        self.position = transformed_position[:3] / transformed_position[3]
-        
-        # Extract rotation from the transformation matrix
-        rotation = matrix[:3, :3]
-        scale_factors = torch.norm(rotation, dim=0)
-        normalized_rotation = rotation / scale_factors
-        
-        # Update rotation
-        self.rotation = torch.matmul(normalized_rotation, self.rotation)
-        
-        # Update scale
-        self.scale *= scale_factors.mean()
-        
-        # Update corners
-        self.update_corners()
+        self.transform_matrix = matrix
+        point_homogeneous = torch.cat([self.position, torch.tensor([1.0])], dim=0)
+        point_homogeneous = matrix @ point_homogeneous
+        self.position = point_homogeneous[:3]
 
-    def ray_intersect(self, rays: Rays):
-        """
-        Compute the intersection of rays with the cube.
-        
-        Args:
-        rays (Rays): An object containing ray origins and directions.
-        
-        Returns:
-        tuple: (hit_points, distances, normals)
-            hit_points: tensor of shape (N, 3) with the intersection points (xyz), or NaN if no hit
-            distances: tensor of shape (N,) with the distances to intersections, or NaN if no hit
-            normals: tensor of shape (N, 3) with the normals at intersection points, or NaN if no hit
-        """
-        # Transform rays to local cube space
-        local_origins = rays.origins - self.position
-        local_origins = torch.matmul(local_origins, self.rotation)
-        local_directions = torch.matmul(rays.directions, self.rotation)
-        
-        # Compute intersections with axis-aligned planes in local space
-        t_min = (-0.5 * self.scale - local_origins) / local_directions
-        t_max = (0.5 * self.scale - local_origins) / local_directions
-        
-        t_near = torch.max(torch.min(t_min, t_max), dim=1).values
-        t_far = torch.min(torch.max(t_min, t_max), dim=1).values
-        
-        # Check if there's a valid intersection
-        mask = (t_near < t_far) & (t_far > 0)
-        distances = torch.where(mask, t_near, torch.full_like(t_near, float('nan')))
-        
-        # Compute hit points
-        local_hit_points = local_origins + distances.unsqueeze(1) * local_directions
-        hit_points = torch.matmul(local_hit_points, self.rotation.T) + self.position
-        
-        # Compute normals
-        eps = 1e-6
-        local_normals = torch.zeros_like(local_hit_points)
-        local_normals[torch.abs(local_hit_points[:, 0] - 0.5 * self.scale) < eps, 0] = 1
-        local_normals[torch.abs(local_hit_points[:, 0] + 0.5 * self.scale) < eps, 0] = -1
-        local_normals[torch.abs(local_hit_points[:, 1] - 0.5 * self.scale) < eps, 1] = 1
-        local_normals[torch.abs(local_hit_points[:, 1] + 0.5 * self.scale) < eps, 1] = -1
-        local_normals[torch.abs(local_hit_points[:, 2] - 0.5 * self.scale) < eps, 2] = 1
-        local_normals[torch.abs(local_hit_points[:, 2] + 0.5 * self.scale) < eps, 2] = -1
-        normals = torch.matmul(local_normals, self.rotation.T)
-        
-        # Apply mask to hit_points and normals
-        hit_points = torch.where(mask.unsqueeze(1), hit_points, torch.full_like(hit_points, float('nan')))
-        normals = torch.where(mask.unsqueeze(1), normals, torch.full_like(normals, float('nan')))
-        
-        return hit_points, distances, normals
+        corners_homogeneous = torch.cat([self.corners, torch.ones((8, 1))], axis=1)
+        corners_homogeneous = matrix @ corners_homogeneous.T
+        self.corners = corners_homogeneous[:3].T
+        self.faces = torch.stack([self.corners[face] for face in self.faces_numbers]).mean(1)
 
     @property
-    def min_corner(self) -> torch.Tensor:
-        """
-        Compute the minimum corner of the cube.
-        
-        Returns:
-        torch.Tensor: A tensor of shape (3,) representing the minimum corner.
-        """
-        return torch.min(self.corners, dim=0).values
-    
+    def min_corner(self):
+        corners = self.corners
+        min_corner = torch.min(corners, dim=0)[0]
+        return self.position - self.scale / 2
+        # return min_corner
+
     @property
-    def max_corner(self) -> torch.Tensor:
-        """
-        Compute the maximum corner of the cube.
-        
-        Returns:
-        torch.Tensor: A tensor of shape (3,) representing the maximum corner.
-        """
-        return torch.max(self.corners, dim=0).values
+    def max_corner(self):
+        return self.position + self.scale / 2
+        # corners = self.corners
+        # max_corner = torch.max(corners, dim=0)[0]
+        # return max_corner
+
+    @cached_property
+    def normals(self):
+        normals = []
+
+        for face in self.faces_numbers:
+            p1, p2, p3, p4 = self.corners[face]
+            vec1 = p2 - p1
+            vec2 = p4 - p1
+
+            normal = torch.cross(vec1, vec2)
+            normal = normal / torch.linalg.norm(normal)
+            normals.append(normal)
+
+        return torch.stack(normals)
+
+    @cached_property
+    def nan_points_array(self):
+        return torch.full((1, 3), float('nan'))
+
+    @cached_property
+    def normal_points_array(self):
+        return torch.full((1, 3), float('nan'))
+
+    def ray_intersect(self, rays):
+        """ Compute intersection of rays with the cube """
+        distance_to_min = self.min_corner - rays.origins
+        distance_to_max = self.max_corner - rays.origins
+        t_min = distance_to_min / (rays.directions+1e-8)
+        t_max = distance_to_max / (rays.directions+1e-8)
+
+        t1 = torch.minimum(t_min, t_max)
+        t2 = torch.maximum(t_min, t_max)
+
+        t_near = torch.max(t1, dim=1)[0]
+        t_far = torch.min(t2, dim=1)[0]
+
+        valid = torch.logical_and(t_near < t_far, t_near > 0)
+        points = self.nan_points_array.repeat(rays.origins.shape[0], 1)
+        normals = self.normal_points_array.repeat(rays.origins.shape[0], 1)
+
+        if valid.any():
+            valid_points = rays(t_near)[valid]
+            points[valid] = valid_points
+
+            valid_points_expanded = valid_points[:, None, :]
+            faces_expanded = self.faces[None, :, :]
+
+            distances = torch.abs(valid_points_expanded - faces_expanded)
+            distances_sum = torch.sum(distances, dim=2)
+            
+            hit_face = torch.argmin(distances_sum, dim=1)
+            hit_normals = self.normals[hit_face] 
+            ray_directions = rays.directions[valid] 
+            dot_product = torch.sum(hit_normals * ray_directions, dim=1)
+            hit_normals[dot_product > 0] *= -1  # Flip the normal if it's pointing in the same direction as the ray
+
+            normals[valid] = hit_normals
+
+        return points, t_near, normals
 
     def aabb(self) -> torch.Tensor:
-        """
-        Compute the Axis-Aligned Bounding Box (AABB) of the cube.
-        
-        Returns:
-        torch.Tensor: A tensor of shape (2, 3) representing the min and max corners of the AABB.
-        """
-
-        return torch.stack([self.min_corner, self.max_corner])
+        return torch.vstack((self.min_corner, self.max_corner))
