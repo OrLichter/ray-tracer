@@ -22,7 +22,7 @@ from time import time
 RESOLUTION = 128
 GRID_SIZE = 10
 NUM_WORKERS = cpu_count() - 1
-DEBUG = False
+DEBUG = True
 
 def is_valid_object(obj):
     is_sphere = isinstance(obj, Sphere)
@@ -72,7 +72,6 @@ class RayTracer:
 
         # For each object, find the grid cells it intersects and add it to the grid
         for obj_index, obj in enumerate(self.non_light_objects):
-
             if isinstance(obj, InfinitePlane):
                 for i in range(self.grid_size):
                     for j in range(self.grid_size):
@@ -173,7 +172,8 @@ class RayTracer:
                 relevant_cells.append(current_cell.tolist())
 
         # Remove duplicates and return
-        return list(set(tuple(cell) for cell in relevant_cells))
+        relevant_cells = list(dict.fromkeys(list(tuple(cell) for cell in relevant_cells)))
+        return relevant_cells
 
     def process_pixel(self, i, j):
         rays = self.camera.generate_rays((i, j), self.width, self.height)
@@ -444,17 +444,17 @@ def parse_scene_file(file_path):
     return camera, scene_settings, objects
 
 
-def save_image(image_array):
+def save_image(image_array, output_path):
     image = Image.fromarray(np.uint8(image_array))
 
     # Save the image to a file
-    image.save("scenes/Spheres.png")
+    image.save(output_path)
 
 
 def main():
     parser = argparse.ArgumentParser(description='Python Ray Tracer')
-    parser.add_argument('--scene_file', default="scenes/pool.txt", type=str, help='Path to the scene file')
-    parser.add_argument('--output_image', default="test.png", type=str, help='Name of the output image file')
+    parser.add_argument('--scene_file', default="scenes/poolcube.txt", type=str, help='Path to the scene file')
+    parser.add_argument('--output_image', default="output/test.png", type=str, help='Name of the output image file')
     parser.add_argument('--width', type=int, default=RESOLUTION, help='Image width')
     parser.add_argument('--height', type=int, default=RESOLUTION, help='Image height')
     args = parser.parse_args()
@@ -472,7 +472,7 @@ def main():
     # image_array = np.zeros((500, 500, 3))
 
     # Save the output image
-    save_image(image_array)
+    save_image(image_array, args.output_image)
 
 
 if __name__ == '__main__':

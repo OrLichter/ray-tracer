@@ -4,6 +4,7 @@ import torch
 class InfinitePlane(Primitive):
     def __init__(self, normal, offset, material_index, material=None):
         self.normal = torch.as_tensor(normal)
+        self.normal = self.normal / torch.norm(self.normal)
         self.offset = torch.as_tensor(offset)
         self.material_index = torch.as_tensor(material_index)
         self.material = material
