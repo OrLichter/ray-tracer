@@ -250,7 +250,7 @@ class RayTracer:
                     closest_intersection = intersection_point[0]
                     closest_obj = obj
                     closest_normal = normals[0]
-                    break
+                    # break
 
         if closest_intersection is None:
             return self.scene_settings.background_color
