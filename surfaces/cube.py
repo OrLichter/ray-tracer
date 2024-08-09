@@ -49,19 +49,17 @@ class Cube(Primitive):
         self.corners = corners_homogeneous[:3].T
         self.faces = torch.stack([self.corners[face] for face in self.faces_numbers]).mean(1)
 
-    @property
+    @cached_property
     def min_corner(self):
         corners = self.corners
         min_corner = torch.min(corners, dim=0)[0]
-        return self.position - self.scale / 2
-        # return min_corner
+        return min_corner
 
-    @property
+    @cached_property
     def max_corner(self):
-        return self.position + self.scale / 2
-        # corners = self.corners
-        # max_corner = torch.max(corners, dim=0)[0]
-        # return max_corner
+        corners = self.corners
+        max_corner = torch.max(corners, dim=0)[0]
+        return max_corner
 
     @cached_property
     def normals(self):
