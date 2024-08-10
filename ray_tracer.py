@@ -278,7 +278,7 @@ class RayTracer:
             color += self.add_diffuse_and_specular(obj, rays, normal, intersection, light, average_shadow_factor)
 
         color += self.add_reflection(obj, intersection, rays, normal, depth)
-        color += self.add_transparency(obj, intersection, rays, normal, depth, color)
+        color = self.add_transparency(obj, intersection, rays, normal, depth, color)
 
         return torch.clamp(color, 0, 1)
 
@@ -389,9 +389,9 @@ class RayTracer:
                 refract_ray = Rays(intersection - normal * 1e-4, refract_dir)
                 refract_color = self.trace_rays(refract_ray, depth - 1)
                 return color * (1 - obj.material.transparency) + refract_color * obj.material.transparency
-        return 0
+        return color
 
-    def refract(incident: torch.Tensor, normal: torch.Tensor, n1: float, n2: float) -> torch.Tensor:
+    def refract(self, incident: torch.Tensor, normal: torch.Tensor, n1: float, n2: float) -> torch.Tensor:
         """Calculate the refraction direction."""
         ratio = n1 / n2
         cos_i = -torch.dot(normal, incident)
