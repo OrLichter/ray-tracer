@@ -39,6 +39,7 @@ class RayTracer:
         self.scene_settings = scene_settings
         self.objects = [obj for obj in objects if is_valid_object(obj)]
         self.non_light_objects = [obj for obj in self.objects if not isinstance(obj, Light)]
+        self.infinite_planes = [obj for obj in self.objects if isinstance(obj, InfinitePlane)]
         self.lights = [obj for obj in self.objects if isinstance(obj, Light)]
         self.width = width
         self.height = height
@@ -54,8 +55,7 @@ class RayTracer:
     def generate_aabb(self):
         """ Generate scene bounding box """
         self.aabb = torch.zeros(2, 3)
-        objs_aabb = [obj.aabb() for obj in self.non_light_objects]
-        objs_aabb = [obj for obj in objs_aabb if obj is not None]
+        objs_aabb = [obj.aabb() for obj in self.non_light_objects if obj.aabb() is not None]
 
         self.aabb[0] = torch.min(torch.stack([obj[0] for obj in objs_aabb]))
         self.aabb[1] = torch.max(torch.stack([obj[1] for obj in objs_aabb]))
@@ -63,6 +63,7 @@ class RayTracer:
     def build_scene_grid(self, grid_size: int):
         """ Build a grid for the scene, based on self.aabb for faster intersection checks """
         self.grid_size = grid_size
+        print(f"Building grid with size {self.grid_size}")
         # Create a grid where each cell contains a list to hold object indices
         self.grid = [[[] for _ in range(self.grid_size)] for _ in range(self.grid_size)]
         self.grid = [[[[] for _ in range(self.grid_size)] for _ in range(self.grid_size)] for _ in range(self.grid_size)]
@@ -73,17 +74,7 @@ class RayTracer:
         # For each object, find the grid cells it intersects and add it to the grid
         for obj_index, obj in enumerate(self.non_light_objects):
             if isinstance(obj, InfinitePlane):
-                for i in range(self.grid_size):
-                    for j in range(self.grid_size):
-                        for k in range(self.grid_size):
-                            # find the intersection of the plane with the grid cell
-                            cell_min = self.aabb[0] + torch.tensor([i, j, k]) * aabb_size / self.grid_size
-                            cell_max = cell_min + aabb_size / self.grid_size
-                            intersection, _, _ = obj.ray_intersect(Rays(cell_min, cell_max - cell_min))
-                            if not intersection.isnan().all():
-                                self.grid[i][j][k].append(obj_index)
                 continue
-
 
             aabb = obj.aabb()
 
@@ -217,7 +208,6 @@ class RayTracer:
                     image[i, :len(result)] = result
 
         image = image.transpose(1, 0, 2)  # H x W x 3
-
         return (image * 255).clip(0, 255).astype(np.uint8) # W x H x 3
 
     def trace_rays(self, rays: Rays, depth: int):
@@ -239,18 +229,28 @@ class RayTracer:
             object_to_run_intersect.extend(objects_in_cell)
 
         # find first occurence for each element in the list object_to_run_intersect
-        object_to_run_intersect = list(dict.fromkeys(object_to_run_intersect))[::-1]
+        object_to_run_intersect = list(dict.fromkeys(object_to_run_intersect))
+
+        # check first intersection with infinite planes
+        for obj in self.infinite_planes:
+            intersection_point, distances, normals = obj.ray_intersect(rays)
+            if (~intersection_point.isnan()).sum() > 0:
+                if distances[0] < closest_intersection_distance:
+                    closest_intersection_distance = distances[0]
+                    closest_intersection = intersection_point[0]
+                    closest_obj = obj
+                    closest_normal = normals[0]
 
         for obj_idx in object_to_run_intersect:
             obj = self.non_light_objects[obj_idx]
-            intersection_point, distances, normals = obj.ray_intersect(rays)  # TODO: Should be batched, for now only one ray
+            intersection_point, distances, normals = obj.ray_intersect(rays)
             if (~intersection_point.isnan()).sum() > 0: # if there is an intersection
                 if distances[0] < closest_intersection_distance:
                     closest_intersection_distance = distances[0]
                     closest_intersection = intersection_point[0]
                     closest_obj = obj
                     closest_normal = normals[0]
-                    # break
+                break
 
         if closest_intersection is None:
             return self.scene_settings.background_color
