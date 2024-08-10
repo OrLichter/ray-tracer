@@ -22,7 +22,7 @@ from time import time
 RESOLUTION = 128
 GRID_SIZE = 10
 NUM_WORKERS = cpu_count() - 1
-DEBUG = True
+DEBUG = False
 
 def is_valid_object(obj):
     is_sphere = isinstance(obj, Sphere)
@@ -208,7 +208,7 @@ class RayTracer:
                     image[i, :len(result)] = result
 
         image = image.transpose(1, 0, 2)  # H x W x 3
-        return (image * 255).clip(0, 255).astype(np.uint8) # W x H x 3
+        return (image * 255).clip(0, 255).astype(np.uint8)[:, ::-1, :] # W x H x 3
 
     def trace_rays(self, rays: Rays, depth: int):
         """ Trace the rays and return the color of the pixel """
@@ -453,8 +453,8 @@ def save_image(image_array, output_path):
 
 def main():
     parser = argparse.ArgumentParser(description='Python Ray Tracer')
-    parser.add_argument('--scene_file', default="scenes/poolcube.txt", type=str, help='Path to the scene file')
-    parser.add_argument('--output_image', default="output/test.png", type=str, help='Name of the output image file')
+    parser.add_argument('--scene_file', default="scenes/scene2.txt", type=str, help='Path to the scene file')
+    parser.add_argument('--output_image', default="output/scene2.png", type=str, help='Name of the output image file')
     parser.add_argument('--width', type=int, default=RESOLUTION, help='Image width')
     parser.add_argument('--height', type=int, default=RESOLUTION, help='Image height')
     args = parser.parse_args()
