@@ -1,7 +1,7 @@
 from functools import cached_property
 import torch
 from ray import Rays
-from surfaces.primitive import Primitive, EMPTY_TENSOR
+from surfaces.primitive import Primitive
 
 class Sphere(Primitive):
     def __init__(self, position, radius, material_index, material=None):
@@ -88,3 +88,7 @@ class Sphere(Primitive):
         aabb = torch.stack([min_corner, max_corner])
         
         return aabb
+    
+    @property
+    def name(self):
+        return "Sphere"

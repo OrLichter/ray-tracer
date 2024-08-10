@@ -54,13 +54,8 @@ class InfinitePlane(Primitive):
         return points, t, self.normal.expand_as(points)
 
     def aabb(self):
-        """
-        Compute the axis-aligned bounding box of the plane
-        
-        Args:
-            matrix (torch.Tensor): A 4x4 transformation matrix.
-        
-        Returns:
-            torch.Tensor: A 2x3 tensor representing the minimum and maximum corners of the AABB.
-        """
         return None
+    
+    @property
+    def name(self):
+        return "InfinitePlane"

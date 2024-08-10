@@ -123,3 +123,7 @@ class Cube(Primitive):
 
     def aabb(self) -> torch.Tensor:
         return torch.vstack((self.min_corner, self.max_corner))
+
+    @property
+    def name(self):
+        return "Cube"
