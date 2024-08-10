@@ -462,14 +462,10 @@ def main():
     # Parse the scene file
     camera, scene_settings, objects = parse_scene_file(args.scene_file)
 
-    # TODO: Implement the ray tracer
     tracer = RayTracer(camera, scene_settings, objects, args.width, args.height)
     start = time()
     image_array = tracer.render()
     print("Time taken to render: {:.2f} seconds".format(time() - start))
-
-    # Dummy result
-    # image_array = np.zeros((500, 500, 3))
 
     # Save the output image
     save_image(image_array, args.output_image)
